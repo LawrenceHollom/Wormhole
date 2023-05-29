@@ -13,8 +13,3 @@ export_presets.cfg
 .mono/
 data_*/
 mono_crash.*.json
-
-# Ignoring random other files I had kicking around
-WormholeLinux
-WormholeWeb
-WormholeWindows
