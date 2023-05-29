@@ -1,0 +1,451 @@
+[gd_scene load_steps=15 format=2]
+
+[ext_resource path="res://assets/WhiteSquare.png" type="Texture" id=1]
+[ext_resource path="res://scenes/Screen.cs" type="Script" id=2]
+[ext_resource path="res://scenes/Menu.cs" type="Script" id=3]
+[ext_resource path="res://scenes/Main.cs" type="Script" id=4]
+[ext_resource path="res://scenes/Main.tres" type="Theme" id=5]
+[ext_resource path="res://scenes/Slider.tscn" type="PackedScene" id=6]
+[ext_resource path="res://scenes/TexturePair.tscn" type="PackedScene" id=7]
+[ext_resource path="res://assets/CubeWithOverflow.png" type="Texture" id=8]
+[ext_resource path="res://assets/CubeWithOverflow2.png" type="Texture" id=9]
+[ext_resource path="res://assets/GreenNebula.png" type="Texture" id=12]
+[ext_resource path="res://assets/PurpleNebula.png" type="Texture" id=13]
+[ext_resource path="res://assets/BlueNebula.png" type="Texture" id=14]
+
+[sub_resource type="Shader" id=1]
+code = "shader_type canvas_item;
+
+uniform float fov = 0.75;
+uniform float cube_size = 3.0;
+uniform int max_reps = 200;
+uniform vec4 fog_color = vec4(0.8, 0.8, 0.8, 1);
+
+uniform float throat_length = 0.5;
+uniform float radius = 0.5;
+
+uniform vec4 position = vec4(0, 0, -2.5, 0);
+uniform vec4 up = vec4(0, -1, 0, 0);
+uniform vec4 left = vec4(-1, 0, 0, 0);
+uniform vec4 forward = vec4(0, 0, -1, 0);
+uniform vec4 normal = vec4(0, 0, 0, 1);
+
+// Columns
+uniform vec4 aet0 = vec4(-1, 0, 0, 0);
+uniform vec4 aet1 = vec4(0, -1, 0, 0);
+uniform vec4 aet2 = vec4(0, 0, -1, 0);
+uniform vec4 aet3 = vec4(0, 0, 0, 1);
+
+// Patterns on either side
+uniform sampler2D home_texture;
+uniform sampler2D away_texture;
+
+uniform float theta = 0.0;
+uniform float phi = 0.0;
+
+const float PI = 3.141592653589;
+const float max_speed = 0.2;
+
+bool in_cube(vec4 pos) {
+	return (abs(pos.x) < cube_size) && (abs(pos.y) < cube_size) && (abs(pos.z) < cube_size);
+}
+
+float face_smash(float x) {
+	return (x + cube_size) / (2.0 * cube_size);
+}
+
+vec2 vec_smash(float x, float y) {
+	return vec2(face_smash(x), face_smash(y));
+}
+
+vec4 get_cube_color(vec4 prev_pos, vec4 new_pos) {
+	vec4 delta = new_pos - prev_pos;
+	
+	float scaler = 0.0;
+	if (abs(new_pos.x) > cube_size) {
+		scaler = max(scaler, (abs(new_pos.x) - cube_size) / abs(delta.x));
+	}
+	if (abs(new_pos.y) > cube_size) {
+		scaler = max(scaler, (abs(new_pos.y) - cube_size) / abs(delta.y));
+	}
+	if (abs(new_pos.z) > cube_size) {
+		scaler = max(scaler, (abs(new_pos.z) - cube_size) / abs(delta.z));
+	}
+	
+	vec4 pos = new_pos - scaler * delta;
+	
+	/*float extra = 0.0;
+	if (pos.x + pos.y + pos.z - floor(pos.x + pos.y + pos.z) > 0.5) {
+		extra = 0.2;
+	}
+	float other_extra = extra;
+	if (pos.w > 0.5) {
+		other_extra = 0.99 - other_extra;
+	}
+	
+	if (abs(pos.x) > abs(pos.y) && abs(pos.x) > abs(pos.z)) {
+		return vec4(1, extra, other_extra, 1);
+	} else if (abs(pos.y) > abs(pos.z)) {
+		return vec4(other_extra, 1, extra, 1);
+	} else {
+		return vec4(extra, other_extra, 1, 1);
+	}*/
+	vec2 posn;
+	vec2 rect;
+	
+	if (abs(pos.x) > abs(pos.y) && abs(pos.x) > abs(pos.z)) {
+		if (pos.x > 0.0) {
+			rect = vec2(1.0, 1.0);
+			posn = vec_smash(pos.y, pos.z);
+		} else {
+			rect = vec2(3.0, 1.0);
+			posn = vec_smash(-pos.y, pos.z);
+		}
+	} else if (abs(pos.y) > abs(pos.z)) {
+		if (pos.y > 0.0) {
+			rect = vec2(2.0, 1.0);
+			posn = vec_smash(-pos.x, pos.z);
+		} else {
+			rect = vec2(0.0, 1.0);
+			posn = vec_smash(pos.x, pos.z);
+		}
+	} else {
+		if (pos.z > 0.0) {
+			rect = vec2(1.0, 0.0);
+			posn = vec_smash(pos.y, -pos.x);
+		} else {
+			rect = vec2(1.0, 2.0);
+			posn = vec_smash(pos.y, pos.x);
+		}
+	}
+	
+	if (pos.w > radius) {
+		return texture(away_texture, (rect + posn) / vec2(4.0, 3.0));
+	} else {
+		return texture(home_texture, (rect + posn) / vec2(4.0, 3.0));
+	}
+}
+
+vec4 surface_normal(vec4 pos) {
+	float length3 = length(vec3(pos.x, pos.y, pos.z));
+	if (length3 < 0.00001) { // Should never happen?
+		return vec4(1, 0, 0, 0);
+	} else if (length3 < 1.0) { // In wormhole
+		float coeff = 1.0 - 1.0 / length3;
+		if (pos.w < radius) {
+			return vec4(coeff * pos.x, coeff * pos.y, coeff * pos.z, pos.w - radius);
+		} else if (pos.w > radius + throat_length) {
+			return vec4(coeff * pos.x, coeff * pos.y, coeff * pos.z, pos.w - throat_length - radius);
+		} else {
+			return vec4(pos.x, pos.y, pos.z, 0);
+		}
+	} else {
+		return vec4(0, 0, 0, 1);
+	}
+}
+
+float dist(vec4 pos) {
+	float length3 = length(vec3(pos.x, pos.y, pos.z));
+	if (length3 < 1.0) { // In wormhole
+		float coeff = 1.0 - 1.0 / length3;
+		if (pos.w < radius) {
+			return sqrt(coeff * coeff * length3 * length3 + (pos.w - radius) * (pos.w - radius)) - radius;
+		} else if (pos.w > radius + throat_length) {
+			return sqrt(coeff * coeff * length3 * length3 + (pos.w - throat_length - radius) * (pos.w - throat_length - radius)) - radius;
+		} else {
+			return length3 - (1.0 - radius);
+		}
+	} else if (pos.w < radius + throat_length / 2.0) {
+		return pos.w;
+	} else {
+		return pos.w - (2.0 * radius) - throat_length;
+	}
+}
+
+void fragment() {
+	//vec4 ray = normalize(tan((UV.x - 0.5) * PI * fov) * left + tan(((UV.y * 9.0 / 16.0) - 0.5) * PI * fov) * up + forward);
+	vec4 ray = normalize(((UV.x - 0.5) * PI * fov) * left + (((UV.y - 0.5) * 9.0 / 16.0) * PI * fov) * up + forward);
+	vec4 pos = position;
+	
+	mat4 base_rot, rot, tea, aet;
+	
+	base_rot[0][0] = cos(phi);
+	base_rot[0][1] = 0.0;
+	base_rot[0][2] = -sin(phi);
+	base_rot[0][3] = 0.0;
+	
+	base_rot[1][0] = sin(phi) * sin(theta);
+	base_rot[1][1] = cos(theta);
+	base_rot[1][2] = cos(phi) * sin(theta);
+	base_rot[1][3] = 0.0;
+	
+	base_rot[2][0] = sin(phi) * cos(theta);
+	base_rot[2][1] = -sin(theta);
+	base_rot[2][2] = cos(phi) * cos(theta);
+	base_rot[2][3] = 0.0;
+	
+	base_rot[3][0] = 0.0;
+	base_rot[3][1] = 0.0;
+	base_rot[3][2] = 0.0;
+	base_rot[3][3] = 1.0;
+	
+	
+	tea[0][0] = -left.x;
+	tea[0][1] = -left.y;
+	tea[0][2] = -left.z;
+	tea[0][3] = -left.w;
+	
+	tea[1][0] = -up.x;
+	tea[1][1] = -up.y;
+	tea[1][2] = -up.z;
+	tea[1][3] = -up.w;
+	
+	tea[2][0] = -forward.x;
+	tea[2][1] = -forward.y;
+	tea[2][2] = -forward.z;
+	tea[2][3] = -forward.w;
+	
+	tea[3][0] = normal.x;
+	tea[3][1] = normal.y;
+	tea[3][2] = normal.z;
+	tea[3][3] = normal.w;
+
+
+	aet[0][0] = aet0.x;
+	aet[0][1] = aet0.y;
+	aet[0][2] = aet0.z;
+	aet[0][3] = aet0.w;
+	
+	aet[1][0] = aet1.x;
+	aet[1][1] = aet1.y;
+	aet[1][2] = aet1.z;
+	aet[1][3] = aet1.w;
+	
+	aet[2][0] = aet2.x;
+	aet[2][1] = aet2.y;
+	aet[2][2] = aet2.z;
+	aet[2][3] = aet2.w;
+	
+	aet[3][0] = aet3.x;
+	aet[3][1] = aet3.y;
+	aet[3][2] = aet3.z;
+	aet[3][3] = aet3.w;
+	
+	rot = tea * base_rot * aet;
+	
+	vec4 dir = rot * ray;
+	vec4 prev_pos = pos;
+	int i = 0;
+	float min_speed = min(radius, 1.0 - radius) / 5.0;
+	int actual_max_reps = int(float(max_reps) * (0.5 / min(radius, 1.0 - radius)));
+	
+	while (in_cube(pos) && i < max_reps) {
+		i++;
+		prev_pos = pos;
+		float actual_speed = min(max_speed, max(min_speed, length(vec3(pos.x, pos.y, pos.z)) - 1.0 - max_speed));
+		pos += actual_speed * dir;
+		// Project back down to the 3-surface
+		pos = pos - (dist(pos) / length(surface_normal(pos))) * surface_normal(pos);
+		vec4 norm = surface_normal(pos);
+		
+		dir = normalize(dir - (dot(dir, norm) / dot(norm, norm)) * norm);
+	}
+	if (i < max_reps) {
+		float fog = max(float(2 * i) / float(max_reps) - 1.0, 0.0);
+		COLOR = fog * fog_color + (1.0 - fog) * get_cube_color(prev_pos, pos);
+	} else {
+		COLOR = fog_color;
+	}
+}"
+
+[sub_resource type="ShaderMaterial" id=2]
+shader = SubResource( 1 )
+shader_param/fov = 0.75
+shader_param/cube_size = 3.0
+shader_param/max_reps = 150
+shader_param/fog_color = Plane( 0.8, 0.8, 0.8, 1 )
+shader_param/throat_length = 0.5
+shader_param/radius = 0.5
+shader_param/position = Plane( 0, 0, -2.5, 0 )
+shader_param/up = Plane( 0, -1, 0, 0 )
+shader_param/left = Plane( -1, 0, 0, 0 )
+shader_param/forward = Plane( 0, 0, -1, 0 )
+shader_param/normal = Plane( 0, 0, 0, 1 )
+shader_param/aet0 = Plane( -1, 0, 0, 0 )
+shader_param/aet1 = Plane( 0, -1, 0, 0 )
+shader_param/aet2 = Plane( 0, 0, -1, 0 )
+shader_param/aet3 = Plane( 0, 0, 0, 1 )
+shader_param/theta = 0.0
+shader_param/phi = 0.0
+
+[node name="Main" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource( 4 )
+
+[node name="Screen" type="TextureRect" parent="."]
+material = SubResource( 2 )
+anchor_right = 1.0
+anchor_bottom = 1.0
+texture = ExtResource( 1 )
+expand = true
+script = ExtResource( 2 )
+
+[node name="TexturePairs" type="Control" parent="."]
+margin_right = 40.0
+margin_bottom = 40.0
+
+[node name="Default" parent="TexturePairs" instance=ExtResource( 7 )]
+homeTexture = ExtResource( 8 )
+awayTexture = ExtResource( 9 )
+
+[node name="Nebulae" parent="TexturePairs" instance=ExtResource( 7 )]
+homeTexture = ExtResource( 13 )
+awayTexture = ExtResource( 12 )
+
+[node name="Stars" parent="TexturePairs" instance=ExtResource( 7 )]
+homeTexture = ExtResource( 14 )
+awayTexture = ExtResource( 14 )
+
+[node name="Menu" type="Control" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme = ExtResource( 5 )
+script = ExtResource( 3 )
+
+[node name="Button" type="Button" parent="Menu"]
+modulate = Color( 0, 0, 0, 0.501961 )
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Menu"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+custom_constants/separation = 10
+alignment = 1
+
+[node name="Title" type="Label" parent="Menu/VBoxContainer"]
+margin_top = 38.0
+margin_right = 1024.0
+margin_bottom = 83.0
+text = "Options"
+align = 1
+
+[node name="Pad1" type="Control" parent="Menu/VBoxContainer"]
+margin_top = 93.0
+margin_right = 1024.0
+margin_bottom = 123.0
+rect_min_size = Vector2( 0, 30 )
+
+[node name="ThroatSlider" parent="Menu/VBoxContainer" instance=ExtResource( 6 )]
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_top = 133.0
+margin_right = 1024.0
+margin_bottom = 200.0
+name = "Throat Length"
+maxValue = 3.0
+defaultValue = 0.5
+
+[node name="RadiusSlider" parent="Menu/VBoxContainer" instance=ExtResource( 6 )]
+anchor_right = 0.0
+anchor_bottom = 0.0
+margin_top = 210.0
+margin_right = 1024.0
+margin_bottom = 277.0
+name = "Curvature Radius"
+minValue = 0.2
+maxValue = 0.8
+defaultValue = 0.5
+
+[node name="HBoxContainer3" type="HBoxContainer" parent="Menu/VBoxContainer"]
+margin_top = 287.0
+margin_right = 1024.0
+margin_bottom = 338.0
+alignment = 1
+
+[node name="PrevButton" type="Button" parent="Menu/VBoxContainer/HBoxContainer3"]
+margin_left = 183.0
+margin_right = 333.0
+margin_bottom = 51.0
+rect_min_size = Vector2( 150, 0 )
+text = "Previous"
+
+[node name="TextureLabel" type="Label" parent="Menu/VBoxContainer/HBoxContainer3"]
+margin_left = 337.0
+margin_top = 3.0
+margin_right = 687.0
+margin_bottom = 48.0
+rect_min_size = Vector2( 350, 0 )
+text = "Texture: Default"
+align = 1
+
+[node name="NextButton" type="Button" parent="Menu/VBoxContainer/HBoxContainer3"]
+margin_left = 691.0
+margin_right = 841.0
+margin_bottom = 51.0
+rect_min_size = Vector2( 150, 0 )
+text = "Next"
+
+[node name="HBoxContainer4" type="HBoxContainer" parent="Menu/VBoxContainer"]
+margin_top = 348.0
+margin_right = 1024.0
+margin_bottom = 399.0
+alignment = 1
+
+[node name="Label" type="Label" parent="Menu/VBoxContainer/HBoxContainer4"]
+margin_left = 196.0
+margin_top = 3.0
+margin_right = 674.0
+margin_bottom = 48.0
+text = "Only look around while clicking: "
+
+[node name="ClickButton" type="Button" parent="Menu/VBoxContainer/HBoxContainer4"]
+margin_left = 678.0
+margin_right = 828.0
+margin_bottom = 51.0
+rect_min_size = Vector2( 150, 0 )
+toggle_mode = true
+text = "False"
+
+[node name="Pad2" type="Control" parent="Menu/VBoxContainer"]
+margin_top = 409.0
+margin_right = 1024.0
+margin_bottom = 439.0
+rect_min_size = Vector2( 0, 30 )
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Menu/VBoxContainer"]
+margin_top = 449.0
+margin_right = 1024.0
+margin_bottom = 500.0
+alignment = 1
+
+[node name="ContinueButton" type="Button" parent="Menu/VBoxContainer/HBoxContainer"]
+margin_left = 412.0
+margin_right = 612.0
+margin_bottom = 51.0
+rect_min_size = Vector2( 200, 0 )
+text = "Continue"
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="Menu/VBoxContainer"]
+margin_top = 510.0
+margin_right = 1024.0
+margin_bottom = 561.0
+alignment = 1
+
+[node name="ExitButton" type="Button" parent="Menu/VBoxContainer/HBoxContainer2"]
+margin_left = 412.0
+margin_right = 612.0
+margin_bottom = 51.0
+rect_min_size = Vector2( 200, 0 )
+text = "Exit"
+
+[connection signal="ContinueSimulation" from="Menu" to="." method="SetSimulationRunning" binds= [ true ]]
+[connection signal="SetClickToLookStatus" from="Menu" to="Screen" method="OnSetClickToLookStatus"]
+[connection signal="UpdateTexturePair" from="Menu" to="." method="OnUpdateTexturePair"]
+[connection signal="pressed" from="Menu/VBoxContainer/HBoxContainer3/PrevButton" to="Menu" method="OnPrevTexture"]
+[connection signal="pressed" from="Menu/VBoxContainer/HBoxContainer3/NextButton" to="Menu" method="OnNextTexture"]
+[connection signal="pressed" from="Menu/VBoxContainer/HBoxContainer4/ClickButton" to="Menu" method="OnToggleClickToLook"]
+[connection signal="pressed" from="Menu/VBoxContainer/HBoxContainer/ContinueButton" to="Menu" method="OnContinueButtonPressed"]
+[connection signal="pressed" from="Menu/VBoxContainer/HBoxContainer2/ExitButton" to="Menu" method="OnExitButtonPressed"]

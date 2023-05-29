@@ -1,0 +1,9 @@
+D:\Godot\Wormhole\.mono\temp\bin\ExportRelease\Wormhole.dll
+D:\Godot\Wormhole\.mono\temp\bin\ExportRelease\Wormhole.pdb
+D:\Godot\Wormhole\.mono\temp\obj\ExportRelease\Wormhole.csproj.AssemblyReference.cache
+D:\Godot\Wormhole\.mono\temp\obj\ExportRelease\Wormhole.GeneratedMSBuildEditorConfig.editorconfig
+D:\Godot\Wormhole\.mono\temp\obj\ExportRelease\Wormhole.AssemblyInfoInputs.cache
+D:\Godot\Wormhole\.mono\temp\obj\ExportRelease\Wormhole.AssemblyInfo.cs
+D:\Godot\Wormhole\.mono\temp\obj\ExportRelease\Wormhole.csproj.CoreCompileInputs.cache
+D:\Godot\Wormhole\.mono\temp\obj\ExportRelease\Wormhole.dll
+D:\Godot\Wormhole\.mono\temp\obj\ExportRelease\Wormhole.pdb
